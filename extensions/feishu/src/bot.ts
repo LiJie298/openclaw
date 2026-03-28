@@ -498,6 +498,9 @@ export async function handleFeishuMessage(params: {
           },
         });
       }
+      // User message without mention still resets the bot chain counter
+      // so multi-bot groups don't stay stuck after maxBotReplyChain is reached.
+      resetBotChainCount(`${account.accountId}:${ctx.chatId}`);
       return;
     }
   } else {

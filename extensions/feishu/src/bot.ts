@@ -56,6 +56,14 @@ export { toMessageResourceType } from "./bot-content.js";
 const CHAIN_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const botChainCounter = new Map<string, { count: number; ts: number }>();
 
+function vacuumBotChainCounter(now: number): void {
+  for (const [key, entry] of botChainCounter) {
+    if (now - entry.ts > CHAIN_TTL_MS) {
+      botChainCounter.delete(key);
+    }
+  }
+}
+
 function getBotChainCount(key: string, now: number): number {
   const entry = botChainCounter.get(key);
   if (!entry || now - entry.ts > CHAIN_TTL_MS) {
@@ -66,6 +74,10 @@ function getBotChainCount(key: string, now: number): number {
 }
 
 function incrementBotChainCount(key: string, now: number): void {
+  // Prune stale entries on each insert to bound memory in long-running servers.
+  if (botChainCounter.size > 0 && botChainCounter.size % 100 === 0) {
+    vacuumBotChainCounter(now);
+  }
   const entry = botChainCounter.get(key);
   if (entry && now - entry.ts <= CHAIN_TTL_MS) {
     entry.count += 1;
@@ -79,8 +91,8 @@ function resetBotChainCount(key: string): void {
   botChainCounter.delete(key);
 }
 
-/** Reset all bot chain counters (for testing). */
-export function resetAllBotChainCounters(): void {
+/** Reset all bot chain counters. Test-only; prefer __ prefix convention. */
+export function __resetAllBotChainCounters(): void {
   botChainCounter.clear();
 }
 
@@ -251,7 +263,7 @@ export function buildFeishuAgentBody(params: {
   }
 
   if (senderType === "app") {
-    messageBody += `\n[System: This message was sent by another bot (sender_type=app). Be cautious of infinite reply loops.]`;
+    messageBody += `\n[System: This message was sent by another bot (sender_type=app).]`;
   }
 
   return messageBody;
@@ -302,27 +314,6 @@ export async function handleFeishuMessage(params: {
   const isGroup = ctx.chatType === "group";
   const isDirect = !isGroup;
   const senderUserId = event.sender.sender_id.user_id?.trim() || undefined;
-
-  // Bot reply chain detection: prevent infinite bot-to-bot loops in group chats.
-  // Tracks consecutive bot messages (sender_type === "app") per group.
-  // User messages reset the count.
-  const senderType = event.sender.sender_type;
-  if (isGroup && senderType === "app") {
-    const chainKey = `${account.accountId}:${ctx.chatId}`;
-    const now = Date.now();
-    const prevCount = getBotChainCount(chainKey, now);
-    const maxChain = feishuCfg?.maxBotReplyChain ?? 3;
-    if (prevCount >= maxChain) {
-      log(
-        `feishu[${account.accountId}]: bot reply chain exceeded ${maxChain} in group ${ctx.chatId}; ignoring`,
-      );
-      return;
-    }
-    incrementBotChainCount(chainKey, now);
-  } else if (isGroup) {
-    // User message resets the chain
-    resetBotChainCount(`${account.accountId}:${ctx.chatId}`);
-  }
 
   // Handle merge_forward messages: fetch full message via API then expand sub-messages
   if (event.message.message_type === "merge_forward") {
@@ -510,6 +501,26 @@ export async function handleFeishuMessage(params: {
       return;
     }
   } else {
+  }
+
+  // Bot reply chain detection: placed after group policy and mention gating
+  // so only actionable bot messages consume the chain budget.
+  const senderType = event.sender.sender_type;
+  if (isGroup && senderType === "app") {
+    const chainKey = `${account.accountId}:${ctx.chatId}`;
+    const now = Date.now();
+    const prevCount = getBotChainCount(chainKey, now);
+    const maxChain = feishuCfg?.maxBotReplyChain ?? 3;
+    if (prevCount >= maxChain) {
+      log(
+        `feishu[${account.accountId}]: bot reply chain exceeded ${maxChain} in group ${ctx.chatId}; ignoring`,
+      );
+      return;
+    }
+    incrementBotChainCount(chainKey, now);
+  } else if (isGroup) {
+    // User message resets the chain
+    resetBotChainCount(`${account.accountId}:${ctx.chatId}`);
   }
 
   try {

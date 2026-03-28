@@ -9,7 +9,7 @@ import {
   buildBroadcastSessionKey,
   buildFeishuAgentBody,
   handleFeishuMessage,
-  resetAllBotChainCounters,
+  __resetAllBotChainCounters,
   resolveBroadcastAgents,
   toMessageResourceType,
 } from "./bot.js";
@@ -2572,7 +2572,7 @@ describe("bot reply chain detection", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    resetAllBotChainCounters();
+    __resetAllBotChainCounters();
     mockShouldComputeCommandAuthorized.mockReset().mockReturnValue(false);
     mockResolveAgentRoute.mockReturnValue(buildDefaultResolveRoute());
     mockCreateFeishuClient.mockReturnValue({

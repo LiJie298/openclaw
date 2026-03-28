@@ -182,7 +182,7 @@ const FeishuSharedConfigShape = {
   reactionNotifications: ReactionNotificationModeSchema,
   typingIndicator: z.boolean().optional(),
   resolveSenderNames: z.boolean().optional(),
-  maxBotReplyChain: z.number().int().min(1).max(10).optional(),
+  maxBotReplyChain: z.number().int().min(1).max(100).optional(),
 };
 
 /**
